@@ -31,7 +31,7 @@ ORNEKLEME_HIZI, N_MFCC = 10000, 13
 EGITIM_STD = 0.2246            # eğitim kayıtlarının tipik standart sapması
 # En yüksek sınıf olasılığı bu değerin altındaysa sonuç "belirsiz" sayılır.
 # Defterin 37. adımında test kümesindeki 4 hatalı tahminin hepsi %70'in altında kalmış,
-# bu eşik test kayıtlarının %7,7'sini işaretlemiştir.
+# bu eşik 272 test kaydının 20'sini (%7,4) işaretlemiştir.
 BELIRSIZLIK_ESIGI = 0.70
 
 # 1. Model ve özellik sırası

@@ -9,12 +9,16 @@ Bir hava kompresörünün çalışırken çıkardığı sesten, kompresörün **
 | Model | Validation Acc. | Test Acc. | Eğitim–validation farkı |
 |---|---|---|---|
 | Tüm kayıt, 14 özellik | %85,66 | %90,44 | 9,64 puan |
-| Parça + 14 özellik | %87,13 | – | 3,47 puan |
+| Parça + 14 özellik | %87,13 | %86,03 | 3,63 puan |
 | **Parça + 14 özellik + MFCC (nihai)** | **%99,26** | **%98,53** | **0,66 puan** |
 
 - Test kümesinde 272 kaydın 268'i doğru sınıflandırıldı. **Healthy sınıfında hiç hata yok**: sağlıklı kompresör arızalı sayılmadı, hiçbir arıza gözden kaçmadı.
 - Kalan 4 hata Piston (3) ve Riderbelt (1) kayıtlarında.
 - Veri, aynı kayıt numarasının farklı kümelere düşmemesi için **Reading numarasına göre gruplu** bölündü (%70 / %15 / %15).
+- İyileşmenin asıl kaynağı MFCC özellikleridir: MFCC olmadan yalnızca parçalara bölmek ezberi azaltmış, ancak test doğruluğunu %90,44'ten %86,03'e düşürmüştür.
+
+<p align="center"><img src="docs/sekiller/g1_model_gelisimi.png" width="90%" alt="Modellerin gelişimi"></p>
+<p align="center"><img src="docs/sekiller/g2_sinif_basarisi.png" width="70%" alt="Sınıf bazında başarı"></p>
 
 ### Açıklanabilirlik (SHAP)
 
@@ -27,7 +31,7 @@ Toplam önemin **%83,7'si** MFCC özelliklerinden geliyor. Her arıza türünün
 
 ### Güven kontrolü
 
-Model "bilmiyorum" diyemediği için başka bir kompresörün **sağlam** sesini %88 güvenle "LOV arızası" olarak sınıflandırdı. Bunu önlemek için eğitim verisine Mahalanobis mesafesiyle bir güven kontrolü eklendi (eşik 9,56):
+Model "bilmiyorum" diyemediği için başka bir kompresörün **sağlam** sesini %87 güvenle "LOV arızası" olarak sınıflandırdı. Bunu önlemek için eğitim verisine Mahalanobis mesafesiyle bir güven kontrolü eklendi (eşik 9,56):
 
 | Kayıt | Mesafe | Sonuç |
 |---|---|---|
@@ -35,7 +39,22 @@ Model "bilmiyorum" diyemediği için başka bir kompresörün **sağlam** sesini
 | Başka kompresör, sağlam (Zenodo) | 292,4 | ⚠️ Güvenilir değil |
 | Başka kompresör, arızalı (Zenodo) | 29 551,6 | ⚠️ Güvenilir değil |
 
+<p align="center"><img src="docs/sekiller/g5_guven_mesafeleri.png" width="85%" alt="Güven kontrolü mesafeleri"></p>
 <p align="center"><img src="docs/sekiller/arayuz_uyari.png" width="85%" alt="Arayüzde güven kontrolü uyarısı"></p>
+
+### Belirsizlik uyarısı
+
+Kayıt tanıdık olsa bile model her kararından aynı ölçüde emin değildir. Test kümesindeki 4 hatalı tahminin hepsinde en yüksek sınıf olasılığı %70'in altında kalmıştır (%42–69). Doğru tahminlerde ise bu değerin ortancası %92'dir. Arayüz, olasılık %70'in altındaysa sonucu **BELİRSİZ** olarak işaretler ve uzman kontrolü önerir:
+
+| Eşik | İşaretlenen test kaydı | Yakalanan hata |
+|---|---|---|
+| %60 | 8 (%2,9) | 3 / 4 |
+| **%70** | **20 (%7,4)** | **4 / 4** |
+| %80 | 50 (%18,4) | 4 / 4 |
+
+En yüksek güvenli hata %69,4'tür; eşik bu değere çok yakın olduğu için yeni verilerde bazı hatalar eşiğin üstünde kalabilir.
+
+<p align="center"><img src="docs/sekiller/g6_tahmin_guveni.png" width="85%" alt="Doğru ve yanlış tahminlerde güven"></p>
 
 ## Depo yapısı
 
@@ -67,12 +86,18 @@ Tarayıcıda açılan sayfaya bir `.dat` veya `.wav` kaydı yükleyin. Sonuç; t
 2. **Model:** XGBoost (`n_estimators=100`, `max_depth=3`, `learning_rate=0.05`). Bir kaydın sınıfı, 5 parçanın olasılıklarının ortalamasıdır.
 3. **Güven kontrolü:** Eğitim parçalarının standartlaştırılmış özelliklerine Ledoit–Wolf kovaryansı ile Mahalanobis mesafesi; eşik, validation kayıtlarının 99. yüzdeliği.
 4. **Açıklanabilirlik:** XGBoost'un yerleşik TreeSHAP hesabı.
+5. **Belirsizlik uyarısı:** En yüksek sınıf olasılığı %70'in altındaysa sonuç belirsiz sayılır.
+
+Kayıtlar dosya yoluna göre sıralanarak işlendiği için defter her çalıştırmada aynı sonuçları verir.
 
 ## Sınırlılıklar
 
 - Model **tek bir kompresörde** eğitilmiştir ve **makineye özgüdür**. Başka bir makinede kullanmak için o makinenin etiketli kayıtlarıyla yeniden eğitilmesi gerekir. Güven kontrolü bu durumu fark eder ama arıza teşhisini düzeltemez.
 - Başka bir kompresörün farklı günlerde alınmış sağlam kayıtlarıyla yapılan anomali tespiti denemelerinde, aynı makinenin sağlam oturumları birbirinden arızalı kayıtlar kadar farklı çıkmıştır. MFCC laboratuvarda en güçlü, farklı koşullarda ise en kırılgan özellik olmuştur.
-- Ön işlenmiş kayıtların örnekleme hızı belgelerde açık değildir; MFCC için 10 kHz (50 000 örnek = 5 sn) varsayılmıştır.
+- Sınıfların ortalama spektrumunda 7 arızanın hepsi, bandın büyük kısmında sağlıklı kompresörden daha düşük enerjilidir (1,3–2,5 kHz arasında 10–20 dB). Bu tek yönlü fark, sağlıklı kayıtların farklı bir oturumda ya da farklı kazançla alınmış olabileceğini düşündürür; modelin bir kısmı fiziksel arıza yerine kayıt koşullarını öğrenmiş olabilir. Bu veriyle kesin olarak ayırt edilemez.
+- Ön işlenmiş kayıtların örnekleme hızı belgelerde açık değildir; MFCC için 10 kHz (50 000 örnek = 5 sn) varsayılmıştır. Kayıtlarda yaklaşık 2,8 kHz'in üstünde enerji bulunmaz.
+
+<p align="center"><img src="docs/sekiller/g3_ortalama_spektrum.png" width="95%" alt="Sınıfların ortalama spektrumu ve sağlıklı duruma göre farkı"></p>
 
 ## Veri ve kaynaklar
 
