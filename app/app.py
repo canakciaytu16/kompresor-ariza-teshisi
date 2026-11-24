@@ -29,6 +29,10 @@ SINIF_ADLARI = ["Healthy", "Bearing", "Flywheel", "LIV",
 PARCA_SAYISI, PARCA_UZUNLUGU = 5, 10000
 ORNEKLEME_HIZI, N_MFCC = 10000, 13
 EGITIM_STD = 0.2246            # eğitim kayıtlarının tipik standart sapması
+# En yüksek sınıf olasılığı bu değerin altındaysa sonuç "belirsiz" sayılır.
+# Defterin 37. adımında test kümesindeki 4 hatalı tahminin hepsi %70'in altında kalmış,
+# bu eşik test kayıtlarının %7,7'sini işaretlemiştir.
+BELIRSIZLIK_ESIGI = 0.70
 
 # 1. Model ve özellik sırası
 model = XGBClassifier()
@@ -132,8 +136,12 @@ def karar_aciklamasi(X, sinif, adet=3):
         katki = katki.reshape(n, -1, f + 1)
     ort = pd.Series(katki[:, sinif, :f].mean(axis=0), index=X.columns)
     secilen = ort.reindex(ort.abs().sort_values(ascending=False).index).head(adet)
-    return ", ".join(f"{ad} ({'+' if v >= 0 else '−'}{abs(v):.2f})"
+    return ", ".join(f"{ad} ({'+' if v >= 0 else '−'}{abs(v):.2f})".replace(".", ",")
                      for ad, v in secilen.items())
+
+def tr(deger, basamak=1):
+    """Sayıyı Türkçe biçimde yazar: ondalık virgül (57,1)."""
+    return f"{deger:.{basamak}f}".replace(".", ",")
 
 def arayuz(dosya):
     if dosya is None:
@@ -145,19 +153,25 @@ def arayuz(dosya):
         return f"Dosya okunamadı: {e}", None
     en_iyi = next(iter(olasiliklar))
     durum = "SAĞLIKLI" if en_iyi == "Healthy" else f"ARIZALI – {en_iyi}"
-    tahmin_satiri = f"{durum} (%{olasiliklar[en_iyi]*100:.1f})"
+    tahmin_satiri = f"{durum} (%{tr(olasiliklar[en_iyi]*100)})"
 
     if mesafe is not None and mesafe > GUVEN["esik"]:
         metin = ("⚠️ GÜVENİLİR DEĞİL: Bu kayıt, modelin eğitildiği kompresörün "
                  "seslerine benzemiyor.\n"
-                 f"Benzerlik mesafesi {mesafe:.1f} (sınır {GUVEN['esik']:.1f}). "
+                 f"Benzerlik mesafesi {tr(mesafe)} (sınır {tr(GUVEN['esik'], 2)}). "
                  "Farklı bir makine, mikrofon veya ortam olabilir.\n"
                  f"Model yine de şunu söylüyor (yalnızca bilgi amaçlı): {tahmin_satiri}")
     else:
         metin = f"Tahmin: {tahmin_satiri}"
+        if olasiliklar[en_iyi] < BELIRSIZLIK_ESIGI:
+            ikinci = list(olasiliklar)[1]
+            metin += (f"\n⚠️ BELİRSİZ: Model bu karardan yeterince emin değil "
+                      f"(güven %{tr(olasiliklar[en_iyi]*100)} < %{BELIRSIZLIK_ESIGI*100:.0f}). "
+                      f"İkinci olasılık: {ikinci} (%{tr(olasiliklar[ikinci]*100)}). "
+                      "Uzman kontrolü önerilir.")
         if mesafe is not None:
             metin += (f"\n✅ Güven kontrolü: tanıdık kayıt "
-                      f"(mesafe {mesafe:.1f} / sınır {GUVEN['esik']:.1f})")
+                      f"(mesafe {tr(mesafe)} / sınır {tr(GUVEN['esik'], 2)})")
         metin += (f"\n🔎 Kararı en çok etkileyen özellikler: {neden}"
                   "\n   (+ bu sınıfa doğru itti, − bu sınıftan uzaklaştırdı)")
     metin += f"\nKullanılan parça sayısı: {parca_sayisi} / {PARCA_SAYISI}"
@@ -176,7 +190,8 @@ uygulama = gr.Interface(
     title="Kompresör Arıza Tahmini (Parça + MFCC, XGBoost – Test %98,5)",
     description=("Bir ses kaydı yükleyin; kayıt 1 sn'lik parçalara bölünür ve parçaların oylamasıyla "
                  "8 durumdan biri tahmin edilir. Model yalnızca IIT Kanpur veri setindeki kompresörde "
-                 "eğitilmiştir; tanımadığı kayıtlar için 'GÜVENİLİR DEĞİL' uyarısı verir. "
+                 "eğitilmiştir; tanımadığı kayıtlar için 'GÜVENİLİR DEĞİL', emin olmadığı "
+                 "tahminler (güven < %70) için 'BELİRSİZ' uyarısı verir. "
                  "Örnekler başka bir kompresöre aittir (Zenodo, CC BY 4.0) ve bu uyarıyı gösterir."),
     flagging_mode="never",
 )
